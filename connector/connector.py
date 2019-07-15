@@ -6,10 +6,10 @@ The devices' GAIN was chosen to be 1. Since this is a 16 bits device, the measur
 voltage will depend on the programmable GAIN. The following table shows the possible
 reading range per chosen GAIN. A GAIN of 1 goes from -4.096V to 4.096V.
 - 2/3 = +/-6.144V
--   1 = +/-4.096V
--   2 = +/-2.048V
--   4 = +/-1.024V
--   8 = +/-0.512V
+-	1 = +/-4.096V
+-	2 = +/-2.048V
+-	4 = +/-1.024V
+-	8 = +/-0.512V
 -  16 = +/-0.256V
 
 This means that the maximum range of this 16 bits device is +/-32767.
@@ -19,6 +19,7 @@ we just need to multiply the output times 0.125, which is done in the server
 side (mqtt-connector) to prevent time delays.
 """
 import os, time
+import json
 import paho.mqtt.client as mqtt
 import pandas as pd
 import numpy as np
@@ -42,7 +43,7 @@ def write_to_db(payload, db_client):
 	print("Received Message")
 	#create new file and write the received msg on it
 	with open('received.csv', 'wb') as fd:
-	    fd.write(payload)
+		fd.write(payload)
 	#Create dataframe
 	df = pd.read_csv('received.csv')
 	#Convert from bits to mV
@@ -58,32 +59,41 @@ def write_to_db(payload, db_client):
 	#Given we are only going to be using one field ('mV')
 	#Tags are given as a dict
 	grouped = df.groupby(['adc','channel'])
+
+	data_points_entered = []
+
 	for group in grouped.groups:
 		adc, channel = group
 		tags = dict(adc=adc, channel=channel)
 		sub_df = grouped.get_group(group)[['mV']]
+
+		data_points_entered.append([tags, len(sub_df)])
+
 		db_client.write_points(sub_df, 'measurements', tags=tags)
+
 	print('Data Written to DB')
 	os.remove('received.csv')
+	return data_points_entered
 
 def main():
 	"""
 	MQTT Client connector in charge of receiving the 10 Hz csv files,
 	perform calculations and store them in the database
 	"""
-	#influxdb information for connection -- right now is local	
-	db_host = 'influxdb'
+	#influxdb information for connection -- right now is local
+	db_host = 'influxdb' #'localhost'
 	db_port = 8086
 	db_username = 'root'
 	db_password = 'root'
 	database = 'testing'
-	
+
 	#info of the MQTT broker
-	host = "10.128.189.236"
+	host = "10.128.189.236" #'iot.eclipse.org'
 	port = 1883
 	keepalive = 30
 	client_id = None #client_id is randomly generated
 	topic = "usa/quincy/1"
+	commsTopic = "communication/influxdbUpdate"
 
 	def on_connect(client, userdata, flags, rc):
 		if rc == 0:
@@ -97,11 +107,17 @@ def main():
 	def on_message(client, userdata, msg):
 		# The callback for when a PUBLISH message is received from the server.
 		#Detects an arriving message (CSV) and writes it in the db
-	    payload = msg.payload
-	    try:
-	        write_to_db(payload, db_client)
-	    except: #This needs to be changed
-		    print("Error")
+		payload = msg.payload
+		try:
+			dataEnteredArray = write_to_db(payload, db_client)
+			client.publish(commsTopic, json.dumps(dataEnteredArray))
+		except: #This needs to be changed
+			print("Error")
+
+	def on_publish(client, userdata, result):
+		# Function for clients's specific callback when pubslishing message
+		print("Comms Data Sent")
+		pass
 
 	# connects to database and creates new database
 	db_client = DataFrameClient(host=db_host, port=db_port, username=db_username, password=db_password, database=database)
@@ -116,10 +132,12 @@ def main():
 	client = mqtt.Client(client_id=client_id, clean_session=True)
 	client.on_connect = on_connect
 	client.on_message = on_message
+	client.on_publish = on_publish
 	client.connect(host, port, keepalive)
-	
+
 	# Blocking call that processes network traffic, dispatches callbacks and handles reconnecting.
 	client.loop_forever()
+
 
 if __name__ == '__main__':
 	main()
