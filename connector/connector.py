@@ -60,6 +60,8 @@ def write_to_db(payload, db_client):
 	#Tags are given as a dict
 	grouped = df.groupby(['adc','channel'])
 
+	#Array of dictionaries that stores data on how much data was gathered in each ADC/Channel.
+	#This will allow for variable amounts of data to be recieved and processed correctly
 	data_points_entered = []
 
 	for group in grouped.groups:
@@ -67,7 +69,8 @@ def write_to_db(payload, db_client):
 		tags = dict(adc=adc, channel=channel)
 		sub_df = grouped.get_group(group)[['mV']]
 
-		data_points_entered.append([tags, len(sub_df)])
+		#Add dictionary to array that stores information on which adc, channel, and how much data was published to the database with those tags
+		data_points_entered.append(dict(adc=adc, channel=channel, amountOfData=len(sub_df)))
 
 		db_client.write_points(sub_df, 'measurements', tags=tags)
 
@@ -81,18 +84,21 @@ def main():
 	perform calculations and store them in the database
 	"""
 	#influxdb information for connection -- right now is local
-	db_host = 'influxdb' #'localhost'
+	db_host = 'localhost'#'influxdb' #'localhost'
 	db_port = 8086
 	db_username = 'root'
 	db_password = 'root'
 	database = 'testing'
 
 	#info of the MQTT broker
-	host = "10.128.189.236" #'iot.eclipse.org'
+	host = 'iot.eclipse.org'#"10.128.189.236" #'iot.eclipse.org'
 	port = 1883
 	keepalive = 30
 	client_id = None #client_id is randomly generated
-	topic = "usa/quincy/1"
+
+	#Add Location Topics to this array in order to allow for multiple publishers
+	topic_locations = ["usa/quincy/1", "usa/quincy/2"]
+
 	commsTopic = "communication/influxdbUpdate"
 
 	def on_connect(client, userdata, flags, rc):
@@ -100,7 +106,10 @@ def main():
 			# Callback for when the client receives a CONNACK response from the server.
 			print("Connected with result code {}".format(rc))
 			# Subscribes to topic with QoS 2
-			client.subscribe(topic, 2)
+
+			#Subscribing to all publishers
+			for topic in topic_locations:
+				client.subscribe(topic, 2)
 		else:
 			print("Error in connection")
 
@@ -108,9 +117,13 @@ def main():
 		# The callback for when a PUBLISH message is received from the server.
 		#Detects an arriving message (CSV) and writes it in the db
 		payload = msg.payload
+		#print(payload)
 		try:
 			dataEnteredArray = write_to_db(payload, db_client)
-			client.publish(commsTopic, json.dumps(dataEnteredArray))
+			#Adding the location of the publisher to the information that will be sent to calculator
+			locationAndDataArray = [msg.topic, dataEnteredArray]
+			#Publishing index information on new data added to Influx to Calculator microservice
+			client.publish(commsTopic, json.dumps(locationAndDataArray))
 		except: #This needs to be changed
 			print("Error")
 
