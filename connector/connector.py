@@ -68,8 +68,13 @@ def write_to_db(payload, db_client):
         tags = dict(adc=adc, channel=channel)
         sub_df = grouped.get_group(group)[['mV']]
 
-        #Add dictionary to array that stores information on which adc, channel, and how much data was published to the database with those tags
-        data_points_entered.append(dict(adc=adc, channel=channel, amountOfData=len(sub_df)))
+        #Add dictionary to array that stores information on which adc, channel,
+        # and how much data was published to the database with those tags
+        data_points_entered.append(dict(
+            adc=adc,
+            channel=channel,
+            amountOfData=len(sub_df)
+        ))
 
         db_client.write_points(sub_df, 'measurements', tags=tags)
 
@@ -85,14 +90,14 @@ def main():
     #influxdb information for connection -- right now is local
     # TODO write config.py classes for different envs (test, dev, prod)
     # TODO make all these global so other funct's can use them
-    db_host = 'localhost'
+    db_host = os.getenv("DB_HOST", "localhost")
     db_port = 8086
     db_username = 'root'
     db_password = 'root'
     database = 'testing'
 
     #info of the MQTT broker
-    host = 'mqtt.eclipse.org'#"10.128.189.236" #'iot.eclipse.org'
+    host = 'mqtt.eclipse.org'
     port = 1883
     keepalive = 30
     client_id = None #client_id is randomly generated

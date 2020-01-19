@@ -13,8 +13,12 @@ def test_write_to_db():
     db_password = "root"
     db_database = "test"
     #Connects to local InfluxDB
-    db_client = DataFrameClient(host=db_host, port=db_port, username=db_username,
-                                password=db_password, database=db_database)
+    db_client = DataFrameClient(
+        host=db_host,
+        port=db_port,
+        username=db_username,
+        password=db_password, database=db_database
+    )
     # waits for influxdb service to be active
     wait_for_influxdb(db_client=db_client)
     #Creates local Database
