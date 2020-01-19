@@ -10,9 +10,9 @@ fi
 printf "\nGit branch -> %s" $TAG
 
 printf "\nBuilding docker image..."
-docker build -f Dockerfile -t $TRAVIS_REPO_SLUG:$TAG .
+docker build -f Dockerfile -t encresearch/connector:$TAG .
 printf "...OK"
 
 printf "\nPushing docker image..."
-docker push $TRAVIS_REPO_SLUG:$TAG
+docker push encresearch/connector:$TAG
 printf "...OK"
