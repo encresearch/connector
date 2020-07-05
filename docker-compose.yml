@@ -7,7 +7,7 @@
 version: '3.1'
 
 volumes:
-    influx_data: {}
+  influx_data: {}
     
 services:
   connector:
@@ -24,7 +24,7 @@ services:
       - "8090:8090"
     volumes:
       # Data persistency
-      - influx_data:/var/lib/influxdb
+      - influx_data:./var/lib/influxdb
     restart: unless-stopped
 
   watchtower: # checks for changes in any of the installed images (on the latest tag)

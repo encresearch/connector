@@ -2,9 +2,10 @@
 This program runs on the server side and subscribes to a specific topic in
 order to receive information from a specific publisher (Raspberry Pi)
 
-The devices' GAIN was chosen to be 1. Since this is a 16 bits device, the measured
-voltage will depend on the programmable GAIN. The following table shows the possible
-reading range per chosen GAIN. A GAIN of 1 goes from -4.096V to 4.096V.
+The devices' GAIN was chosen to be 1. Since this is a 16 bits device, the
+measured voltage will depend on the programmable GAIN. The following table
+shows the possible reading range per chosen GAIN. A GAIN of 1 goes from -4.096V
+to 4.096V.
 - 2/3 = +/-6.144V
 -   1 = +/-4.096V
 -   2 = +/-2.048V
@@ -19,48 +20,60 @@ readings to mV, we just need to multiply the output times 0.125,
 which is done here, in the server side, to prevent time delays.
 """
 import os
-import time
 import json
+
 import pandas as pd
-import numpy as np
 import paho.mqtt.client as mqtt
-from datetime import datetime
 from influxdb import DataFrameClient
+
+DB_HOST = os.getenv("DB_HOST", "infsluxdb")
+DB_PORT = int(os.getenv("DB_PORT", "8086"))
+DB_USERNAME = os.getenv("DB_USER", "root")
+DB_NAME = os.getenv("DB_NAME", "raw_sensor_data")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "root")
+COMMS_TOPIC = "communication/influxdbUpdate"
+
+# MQTT broker info
+BROKER_HOST = 'mqtt.eclipse.org'
+BROKER_PORT = 1883
+BROKER_KEEPALIVE = 30
+BROKER_CLIENT_ID = None  # client_id is randomly generated
+MQTT_TOPIC_LOCATIONS = [
+    "usa/quincy/1",
+    "usa/quincy/2",
+    "test_env/usa/quincy/1"
+]
+
 
 def wait_for_influxdb(db_client):
     """Function to wait for the influxdb service to be available"""
-    # TODO better way to do all this
-    try:
-        db_client.ping()
-        print("connected to db")
-        return None
-    except:
-        print("not yet")
-        time.sleep(1)
-        wait_for_influxdb(db_client)
+    db_client.ping()
+
 
 def write_to_db(payload, db_client):
     """Recieves CSV file and converts to mV values and writes to InfluxDB"""
-    print("Received Message")
-    with open('received.csv', 'wb') as fd:
-        fd.write(payload)
-    df = pd.read_csv('received.csv')
-    #Convert from bits to mV
-    df['mV'] = df['value']*0.125
-    #Delete old value of bits
-    del df['value']
-    #Convert the received timestamp into a pandas datetime object
-    df['date_time'] = pd.to_datetime(df['time_stamp'])
-    #set a DateTime index and delete the old time_stamp columns
-    df = df.set_index(pd.DatetimeIndex(df['date_time']))
-    del df['time_stamp'], df['date_time']
-    #Seperate the dataframe by groups of adc's and channels
-    #Given we are only going to be using one field ('mV')
-    #Tags are given as a dict
-    grouped = df.groupby(['adc', 'channel'])
+    with open('received.csv', 'wb') as r_data:
+        r_data.write(payload)
 
-    #Array of dictionaries that stores data on how much data was gathered in each ADC/Channel.
-    #This will allow for variable amounts of data to be recieved and processed correctly
+    dataframe = pd.read_csv('received.csv')
+    # Convert from bits to mV
+    dataframe['mV'] = dataframe['value']*0.125
+    # Delete old value of bits
+    del dataframe['value']
+    # Convert the received timestamp into a pandas datetime object
+    dataframe['date_time'] = pd.to_datetime(dataframe['time_stamp'])
+    # set a DateTime index and delete the old time_stamp columns
+    dataframe = dataframe.set_index(pd.DatetimeIndex(dataframe['date_time']))
+    del dataframe['time_stamp'], dataframe['date_time']
+
+    # Seperate the dataframe by groups of adc's and channels
+    # Given we are only going to be using one field ('mV')
+    # Tags are given as a dict
+    grouped = dataframe.groupby(['adc', 'channel'])
+
+    # Array of dictionaries that stores data on how much data was gathered in
+    # each ADC/Channel. This will allow for variable amounts of data to be
+    # recieved and processed correctly.
     data_points_entered = []
 
     for group in grouped.groups:
@@ -68,7 +81,7 @@ def write_to_db(payload, db_client):
         tags = dict(adc=adc, channel=channel)
         sub_df = grouped.get_group(group)[['mV']]
 
-        #Add dictionary to array that stores information on which adc, channel,
+        # Add dictionary to array that stores information on which adc, channel
         # and how much data was published to the database with those tags
         data_points_entered.append(dict(
             adc=adc,
@@ -82,80 +95,57 @@ def write_to_db(payload, db_client):
     os.remove('received.csv')
     return data_points_entered
 
+
 def main():
     """
     MQTT Client connector in charge of receiving the 10 Hz csv files,
     perform calculations and store them in the database
     """
-    #influxdb information for connection -- right now is local
-    # TODO write config.py classes for different envs (test, dev, prod)
-    # TODO make all these global so other funct's can use them
-    db_host = os.getenv("DB_HOST", "localhost")
-    db_port = 8086
-    db_username = 'root'
-    db_password = 'root'
-    database = 'testing'
 
-    #info of the MQTT broker
-    host = 'mqtt.eclipse.org'
-    port = 1883
-    keepalive = 30
-    client_id = None #client_id is randomly generated
-
-    #Add Location Topics to this array in order to allow for multiple publishers
-    topic_locations = ["usa/quincy/1", "usa/quincy/2"]
-
-    commsTopic = "communication/influxdbUpdate"
-
-    def on_connect(client, userdata, flags, rc):
-        if rc == 0:
-            # Callback for when the client receives a CONNACK response from the server.
-            print("Connected with result code {}".format(rc))
-            # Subscribes to topic with QoS 2
-
-            #Subscribing to all publishers
-            for topic in topic_locations:
+    def on_connect(client, userdata, flags, r_code):
+        """Callback for when the client connects to the MQTT broker."""
+        if r_code == 0:
+            print("Connected with result code {}".format(r_code))
+            for topic in MQTT_TOPIC_LOCATIONS:
                 client.subscribe(topic, 2)
         else:
             print("Error in connection")
+            raise Exception
 
     def on_message(client, userdata, msg):
-        #The callback for when a PUBLISH message is received from the server.
-        #Detects an arriving message (CSV) and writes it in the db
-        payload = msg.payload
-        try:
-            dataEnteredArray = write_to_db(payload, db_client)
-            #Adding the location of the publisher to the information that will be sent to calculator
-            locationAndDataArray = [msg.topic, dataEnteredArray]
-            #Publishing index information on new data added to Influx to Calculator microservice
-            client.publish(commsTopic, json.dumps(locationAndDataArray))
-        except: #This needs to be changed
-            print("Error")
+        """The callback for when a PUBLISH message is received from the server.
 
-    def on_publish(client, userdata, result):
+        Detects an arriving message (CSV) and writes it in the db. Then, it
+        forwards the calculated data for other services to make use of it.
+        """
+        payload = msg.payload
+        data_entered_array = write_to_db(payload, db_client)
+        # Adding the location of the publisher to the information that will be
+        # sent to calculator
+        location_and_data_array = [msg.topic, data_entered_array]
+        # Publishing index information on new data added to Influx to
+        # the calculator microservice
+        client.publish(COMMS_TOPIC, json.dumps(location_and_data_array))
+
+    def on_publish(*args):
         # Function for clients's specific callback when pubslishing message
         print("Comms Data Sent")
-        pass
 
-    # connects to database and creates new database
     db_client = DataFrameClient(
-        host=db_host, port=db_port, username=db_username, password=db_password, database=database
-        )
-    # waits for influxdb service to be active
+        host=DB_HOST,
+        port=DB_PORT,
+        username=DB_USERNAME,
+        password=DB_PASSWORD,
+        database=DB_NAME
+    )
     wait_for_influxdb(db_client=db_client)
-    db_client.create_database('testing')
+    db_client.create_database(DB_NAME)
 
-    #Establish conection with broker and start receiving messages
-    # Params -> Client(client_id=””, clean_session=True, userdata=None, protocol=MQTTv311, transport=”tcp”)
-    # We set clean_session to False, so in case connection is lost, it'll reconnect with same ID
-    # For debug purposes (client_id is not defined) we'll set it to True
-    client = mqtt.Client(client_id=client_id, clean_session=True)
+    client = mqtt.Client(client_id=BROKER_CLIENT_ID, clean_session=True)
     client.on_connect = on_connect
     client.on_message = on_message
     client.on_publish = on_publish
-    client.connect(host, port, keepalive)
-
-    # Blocking call that processes network traffic, dispatches callbacks and handles reconnecting.
+    client.connect(BROKER_HOST, BROKER_PORT, BROKER_KEEPALIVE)
     client.loop_forever()
 
 

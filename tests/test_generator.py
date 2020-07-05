@@ -1,12 +1,14 @@
-import unittest, os, time
+import os
+from datetime import datetime
+
 import paho.mqtt.client as mqtt
 import pandas as pd
-import numpy as np
-from datetime import datetime
 from influxdb import DataFrameClient
 
+from connector.connector import write_to_db, wait_for_influxdb
+
+
 def test_write_to_db():
-    from connector.connector import write_to_db, wait_for_influxdb
     db_host = "influxdb_test"
     db_port = 8086
     db_username = "root"

@@ -1,0 +1,4 @@
+-r ./test.txt
+
+ipython==7.16.1
+ipdb==0.13.3

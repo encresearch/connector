@@ -1,11 +1,19 @@
 # DEV SETUP
 # Connector is created directly from docker file and
 # the app/ volume is mounted inside the container for debugging
-version: '3.1'
+version: '3.6'
+
+volumes:
+  influx_data: {}
+
 services:
+
   connector:
     container_name: connector
-    build: .
+    build:
+      context: ./
+      dockerfile: Dockerfile
+      target: development
     links:
       - influxdb
     volumes:
@@ -15,8 +23,10 @@ services:
   influxdb:
     image: influxdb
     container_name: influxdb
-    ports:
-      - "8083:8083"
-      - "8086:8086"
-      - "8090:8090"
+    expose:
+      - "8083"
+      - "8086"
+      - "8090"
+    volumes:
+      - influx_data:/var/lib/influxdb
     restart: unless-stopped
