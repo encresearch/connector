@@ -2,7 +2,7 @@
 # CONNECTOR - Sensor Data Gathering API Service
 ![Connector CI Tests](https://github.com/encresearch/connector/workflows/Connector%20CI%20Tests/badge.svg)
 
-Python application API that receives raw measurements data from an MQTT Broker, and stores it in InfluxDB.
+Python application API that receives raw bits measurements data from an MQTT Broker, and stores it in InfluxDB.
 
 Connector is a Python ETL data pipeline MQTT client that subscribes to sensor data sent by different [publishers](https://github.com/encresearch/publisher) and stores it in InfluxDB.
 
@@ -13,7 +13,7 @@ This service is part of our [Earthquake Data Assimilation System](https://github
 ## Getting Started
 These instructions are to get connector up and running in your local development environment.
 
-The main python app ```connector``` is containarized, built and run using [docker compose](https://docs.docker.com/compose/). By doing this, all the dependencies are installed in a [conda](https://conda.io/docs/) environment running inside the container. Running docker compose will also fire up both an [InfluxDB](https://www.influxdata.com/products/influxdb-overview/) and an [Eclipse Mosquitto](https://mosquitto.org/) service.
+The main python app ```connector``` is containarized, built and run using [docker compose](https://docs.docker.com/compose/). By doing this, all the dependencies are installedinside the container using pip. Running docker compose will also fire up both an [InfluxDB](https://www.influxdata.com/products/influxdb-overview/) and an [Eclipse Mosquitto](https://mosquitto.org/) service.
 
 ### Install and Run Locally
 
@@ -48,7 +48,28 @@ The ```docker-compose.dev.yml``` file builds the docker image using the files on
 We are using [pytest](https://docs.pytest.org/en/latest/) also inside a container. You can run local tests via:
 
 ```
-$ chmod u+x test.sh #Make sure file is executable
+$ docker-compose -f docker-compose.test.yml up -d --build && docker attach connector_test
+# Then, stop and remove containers after running tests
+$ docker-compose -f docker-compose.test.yml down
+```
+This is the official test that will run in our CI pipeline. It might take some time to run because docker needs to re-build the container. Nevertheless, for a quicker alternative, you can run connector locally through ```docker-compose``` as highlighted earlier, and then just ssh into it. Once you do, you can run our tests from inside the container.
+
+SSH into the container:
+
+```
+$ docker exec -it connector sh
+```
+
+Go to the project's directory:
+
+```
+$ cd /opt/connector
+```
+
+Make file executable and run tests:
+
+```
+$ chmod u+x ./test.sh
 $ ./test.sh
 ```
 
