@@ -33,15 +33,16 @@ MV_PER_BIT = 0.125
 DB_HOST = os.getenv("DB_HOST", "influxdb")
 DB_PORT = int(os.getenv("DB_PORT", "8086"))
 DB_USERNAME = os.getenv("DB_USER", "root")
-DB_NAME = os.getenv("DB_NAME", "raw_sensor_data")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "root")
+DB_NAME = os.getenv("DB_NAME", "sensor_data")
+DB_CONNECTOR_TABLE = os.getenv("DB_CONNECTOR_TABLE", "raw_measurements")
 COMMS_TOPIC = "communication/influxdbUpdate"
 
 # MQTT broker info
-BROKER_HOST = 'mqtt.eclipse.org'
-BROKER_PORT = 1883
-BROKER_KEEPALIVE = 30
-BROKER_CLIENT_ID = None  # client_id is randomly generated
+BROKER_HOST = os.getenv("BROKER_HOST", "mqtt.eclipse.org")
+BROKER_PORT = int(os.getenv("BROKER_PORT", "1883"))
+BROKER_KEEPALIVE = int(os.getenv("BROKER_KEEPALIVE", "30"))
+BROKER_CLIENT_ID = None
 
 MQTT_TOPIC_LOCATIONS = [
     "usa/quincy/1",
@@ -101,7 +102,7 @@ def write_to_db(payload, db_client):
             amountOfData=len(sub_df)
         ))
 
-        db_client.write_points(sub_df, 'measurements', tags=tags)
+        db_client.write_points(sub_df, DB_CONNECTOR_TABLE, tags=tags)
 
     print('Data Written to DB')
     os.remove('received.csv')
