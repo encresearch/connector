@@ -1,46 +1,45 @@
-import os
-from datetime import datetime
-
-import paho.mqtt.client as mqtt
+"""CI Tests."""
 import pandas as pd
-from influxdb import DataFrameClient
+from connector.connector import (
+    connect_to_db,
+    connect_to_mqtt_broker,
+    write_to_db,
+    MV_PER_BIT
+)
 
-from connector.connector import write_to_db, wait_for_influxdb
+
+def test_connect_to_db():
+    """Test the system is able to connect to an infuxdb instance."""
+    db_client = connect_to_db()
+    assert db_client is not None
+    db_client.close()
+
+
+def test_connect_to_broker():
+    """Test connection to our broker."""
+    db_client = connect_to_db()
+    mqtt_client = connect_to_mqtt_broker(db_client)
+    assert mqtt_client is not None
+    mqtt_client.disconnect()
 
 
 def test_write_to_db():
-    db_host = "influxdb_test"
-    db_port = 8086
-    db_username = "root"
-    db_password = "root"
-    db_database = "test"
-    #Connects to local InfluxDB
-    db_client = DataFrameClient(
-        host=db_host,
-        port=db_port,
-        username=db_username,
-        password=db_password, database=db_database
-    )
-    # waits for influxdb service to be active
-    wait_for_influxdb(db_client=db_client)
-    #Creates local Database
-    db_client.create_database('test')
-    #Create testing CSV file with one mock up line
-    now = datetime.now()
-    one_line = str.encode("adc,channel,time_stamp,value\n1,1,{},100".format(now))
-    with open("testing.csv", "wb") as csvfile:
-        csvfile.write(one_line)
-    f = open("testing.csv")
-    payload = f.read()
+    """Test the write to DB function with a mock CSV file."""
+    db_client = connect_to_db()
+
+    # 1. Send a mock reading file
+    mock_readings_file = open("tests/ten_hz.csv")
+    payload = mock_readings_file.read()
     payload = str.encode(payload)
     write_to_db(payload=payload, db_client=db_client)
+
+    # 2. Test the values are converted correctly
     written = db_client.query('SELECT * FROM "measurements"')
     dataframe = written['measurements']
-    value = dataframe['mV'][0] 
-    #Remove mockup CSV file
-    os.remove("testing.csv")
-    #Deletes mockup DB
-    db_client.drop_database('test')
-    assert value == 100*0.125
-    #bug : dataframe.index.values[0] has more precision than np.datetime64(now)
-    #assert dataframe.index.values[0] == np.datetime64(now)
+    raw_dataframe = pd.read_csv("tests/ten_hz.csv")
+    raw_dataframe['expected_mV'] = raw_dataframe['value']*MV_PER_BIT
+
+    print(dataframe, type(dataframe))
+    print('\n\n\n', raw_dataframe)
+
+    assert dataframe['mV'].isin(raw_dataframe['expected_mV']).all()

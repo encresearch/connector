@@ -9,25 +9,28 @@ ENV PYTHONDONTWRITEBYTECODE 1
 # Turns off buffering for easier container logging
 ENV PYTHONUNBUFFERED 1
 
-COPY ./requirements /requirements
-COPY ./connector /
-
-# ============ DEVELOPMENT ENV ============
-FROM builder AS development
-COPY ./tests /tests
-
-RUN python -m pip install -r /requirements/dev.txt
-CMD /bin/bash -c "python -u connector.py"
-
-# ============ TESTING ENV ============
-FROM builder AS testing
-COPY ./tests /tests
-
-RUN python -m pip install -r /requirements/test.txt
-CMD /bin/bash -c "pytest -v"
+COPY ./requirements /opt/connector/requirements
+COPY ./connector /opt/connector
 
 # ============ PRODUCTION ENV ============
 FROM builder AS production
 
-RUN python -m pip install -r /requirements/prod.txt
+RUN python -m pip install -r /opt/connector/requirements/prod.txt
+CMD /bin/bash -c "python -u connector.py"
+
+# ============ TESTING ENV ============
+FROM builder AS testing
+COPY ./tests /opt/connector/tests
+COPY ./test.sh /opt/connector
+
+RUN python -m pip install -r /opt/connector/requirements/test.txt
+
+WORKDIR /opt/connector
+CMD ["./test.sh"]
+
+# ============ DEVELOPMENT ENV ============
+FROM builder AS development
+COPY ./tests /opt/tests
+
+RUN python -m pip install -r /opt/connector/requirements/dev.txt
 CMD /bin/bash -c "python -u connector.py"

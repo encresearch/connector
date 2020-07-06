@@ -1,7 +1,9 @@
 #!/bin/bash
 
-# This script will run local tests
-docker-compose -f docker-compose.test.yml up connector_test
+printf "\n~~~ Running tests...this can take a few minutes ~~~\n"
 
-# Destroy containers
-docker-compose -f docker-compose.test.yml down
+# Get project root
+PROJECT_ROOT=`pwd`
+
+# Run tests with pytest
+python3 -m pytest $PROJECT_ROOT -s

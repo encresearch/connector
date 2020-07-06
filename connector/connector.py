@@ -21,12 +21,16 @@ which is done here, in the server side, to prevent time delays.
 """
 import os
 import json
+import time
 
 import pandas as pd
 import paho.mqtt.client as mqtt
+from requests.exceptions import ConnectionError
 from influxdb import DataFrameClient
 
-DB_HOST = os.getenv("DB_HOST", "infsluxdb")
+MV_PER_BIT = 0.125
+
+DB_HOST = os.getenv("DB_HOST", "influxdb")
 DB_PORT = int(os.getenv("DB_PORT", "8086"))
 DB_USERNAME = os.getenv("DB_USER", "root")
 DB_NAME = os.getenv("DB_NAME", "raw_sensor_data")
@@ -38,6 +42,7 @@ BROKER_HOST = 'mqtt.eclipse.org'
 BROKER_PORT = 1883
 BROKER_KEEPALIVE = 30
 BROKER_CLIENT_ID = None  # client_id is randomly generated
+
 MQTT_TOPIC_LOCATIONS = [
     "usa/quincy/1",
     "usa/quincy/2",
@@ -46,8 +51,15 @@ MQTT_TOPIC_LOCATIONS = [
 
 
 def wait_for_influxdb(db_client):
-    """Function to wait for the influxdb service to be available"""
-    db_client.ping()
+    """Function to wait for the influxdb service to be available."""
+    try:
+        db_client.ping()
+        print("connected to db")
+        return None
+    except ConnectionError:
+        print("not yet")
+        time.sleep(1)
+        wait_for_influxdb(db_client)
 
 
 def write_to_db(payload, db_client):
@@ -57,7 +69,7 @@ def write_to_db(payload, db_client):
 
     dataframe = pd.read_csv('received.csv')
     # Convert from bits to mV
-    dataframe['mV'] = dataframe['value']*0.125
+    dataframe['mV'] = dataframe['value'] * MV_PER_BIT
     # Delete old value of bits
     del dataframe['value']
     # Convert the received timestamp into a pandas datetime object
@@ -96,14 +108,24 @@ def write_to_db(payload, db_client):
     return data_points_entered
 
 
-def main():
-    """
-    MQTT Client connector in charge of receiving the 10 Hz csv files,
-    perform calculations and store them in the database
-    """
+def connect_to_db():
+    """Returns db_client (influxdb.DataFrame) instance."""
+    db_client = DataFrameClient(
+        host=DB_HOST,
+        port=DB_PORT,
+        username=DB_USERNAME,
+        password=DB_PASSWORD,
+        database=DB_NAME
+    )
+    wait_for_influxdb(db_client=db_client)
+    db_client.create_database(DB_NAME)
+    return db_client
 
+
+def connect_to_mqtt_broker(db_client):
+    """Returns a paho MQTT Client instance after connection with broker."""
     def on_connect(client, userdata, flags, r_code):
-        """Callback for when the client connects to the MQTT broker."""
+        """Subscribe to topics as soon as it connects."""
         if r_code == 0:
             print("Connected with result code {}".format(r_code))
             for topic in MQTT_TOPIC_LOCATIONS:
@@ -131,22 +153,23 @@ def main():
         # Function for clients's specific callback when pubslishing message
         print("Comms Data Sent")
 
-    db_client = DataFrameClient(
-        host=DB_HOST,
-        port=DB_PORT,
-        username=DB_USERNAME,
-        password=DB_PASSWORD,
-        database=DB_NAME
-    )
-    wait_for_influxdb(db_client=db_client)
-    db_client.create_database(DB_NAME)
-
     client = mqtt.Client(client_id=BROKER_CLIENT_ID, clean_session=True)
     client.on_connect = on_connect
     client.on_message = on_message
     client.on_publish = on_publish
     client.connect(BROKER_HOST, BROKER_PORT, BROKER_KEEPALIVE)
-    client.loop_forever()
+
+    return client
+
+
+def main():
+    """
+    MQTT Client connector in charge of receiving the 10 Hz csv files,
+    perform calculations and store them in the database
+    """
+    db_client = connect_to_db()
+    mqtt_client = connect_to_mqtt_broker(db_client=db_client)
+    mqtt_client.loop_forever()
 
 
 if __name__ == '__main__':

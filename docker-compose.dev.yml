@@ -21,7 +21,7 @@ services:
     restart: unless-stopped
 
   influxdb:
-    image: influxdb
+    image: influxdb:1.7
     container_name: influxdb
     expose:
       - "8083"
