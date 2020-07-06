@@ -150,7 +150,7 @@ def connect_to_mqtt_broker(db_client):
         client.publish(COMMS_TOPIC, json.dumps(location_and_data_array))
 
     def on_publish(*args):
-        # Function for clients's specific callback when pubslishing message
+        """Function for the clients's callback when pubslishing message."""
         print("Comms Data Sent")
 
     client = mqtt.Client(client_id=BROKER_CLIENT_ID, clean_session=True)
